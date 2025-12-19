@@ -2,3 +2,67 @@ C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksvi
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\ui\MapFragment.kt
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\service\MeshService.kt
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\model\UIState.kt
+
+
+
+    //NICK
+    //log to file
+    open fun writeFileExternalStorage(s: String) {
+
+        val textToWrite = s + "\n";
+
+        //Checking the availability state of the External Storage.
+        val state = Environment.getExternalStorageState()
+        if (Environment.MEDIA_MOUNTED != state) {
+
+            //If it isn't mounted - we can't write into it.
+            return
+        }
+
+        //Create a new file that points to the root directory, with the given name:
+        val file = File(getExternalFilesDir(null), "meshlog.txt")
+
+        //This point and below is responsible for the write operation
+        var outputStream: FileOutputStream? = null
+        try {
+            file.createNewFile()
+            //second argument of FileOutputStream constructor indicates whether
+            //to append or create new file if one exists
+            outputStream = FileOutputStream(file, true)
+            outputStream.write(textToWrite.toByteArray())
+            outputStream.flush()
+            outputStream.close()
+        } catch (e: java.lang.Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /// Update our model and resend as needed for a MeshPacket we just received from the radio
+    private fun handleReceivedData(packet: MeshPacket) {
+        myNodeInfo?.let { myInfo ->
+
+
+@@ -638,7 +671,10 @@ class MeshService : Service(), Logging {
+                        if (u.time == 0 && packet.rxTime != 0)
+                            u = u.toBuilder().setTime(packet.rxTime).build()
+                        // PII
+                        // debug("position_app ${packet.from} ${u.toOneLineString()}")
+                         //debug("position_app ${packet.from} ${u.toOneLineString()}")
+                        //NICK
+                        writeFileExternalStorage("Position, ${u.time}, ${packet.from}, ${u.latitudeI}, ${u.longitudeI}, ${u.altitude}, ${u.satsInView}, ${packet.rxSnr}");
+
+                        handleReceivedPosition(packet.from, u, dataPacket.time)
+                    }
+
+
+@@ -654,6 +690,11 @@ class MeshService : Service(), Logging {
+                        var u = TelemetryProtos.Telemetry.parseFrom(data.payload)
+                        if (u.time == 0 && packet.rxTime != 0)
+                            u = u.toBuilder().setTime(packet.rxTime).build()
+                        //DebugLogFile("telem", " ${packet.from} ${u.toOneLineString()}")
+                        //NICK
+                        //writeFileExternalStorage("data, ${packet.from} ${u.toOneLineString()}");
+                        writeFileExternalStorage("Telemetry, ${u.time}, ${packet.from}, ${u.environmentMetrics.voltage}, ${u.environmentMetrics.current}, ${u.environmentMetrics.barometricPressure}, ${u.environmentMetrics.relativeHumidity}, ${u.environmentMetrics.temperature}");
+
+                        handleReceivedTelemetry(packet.from, u, dataPacket.time)
+                    }
