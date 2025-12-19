@@ -1,10 +1,13 @@
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\ui\UsersFragment.kt 
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\ui\MapFragment.kt
-C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\service\MeshService.kt
+                    //NICK
+                    //println(" {${node.environmentMetrics!!.temperature})"); //crashes
+                    marker.title = "${it.longName} ${node.batteryStr} alt: ${node.position!!.altitude} m / ${(node.position!!.altitude * 3.2808399).toInt()} ft ${node.environmentMetrics.toString()}"
+
 C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\model\UIState.kt
 
 
-
+C:\Users\nj\Downloads\git\old\1\Meshtastic-Android\app\src\main\java\com\geeksville\mesh\service\MeshService.kt
     //NICK
     //log to file
     open fun writeFileExternalStorage(s: String) {
