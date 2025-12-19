@@ -1,54 +1,67 @@
+/*
+ * Copyright (c) 2025 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.geeksville.mesh
 
-import android.os.Debug
-import com.geeksville.mesh.android.AppPrefs
-import com.geeksville.mesh.android.BuildUtils.isEmulator
-import com.geeksville.mesh.android.GeeksvilleApplication
-import com.geeksville.mesh.android.Logging
-import com.geeksville.mesh.util.Exceptions
-import com.google.firebase.crashlytics.FirebaseCrashlytics
+import android.app.Application
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.meshtastic.core.database.DatabaseManager
+import org.meshtastic.core.prefs.mesh.MeshPrefs
+import timber.log.Timber
 
+/**
+ * The main application class for Meshtastic.
+ *
+ * This class is annotated with [HiltAndroidApp] to enable Hilt for dependency injection. It initializes core
+ * application components, including analytics and platform-specific helpers, and manages analytics consent based on
+ * user preferences.
+ */
 @HiltAndroidApp
-class MeshUtilApplication : GeeksvilleApplication() {
-
+class MeshUtilApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-
-        Logging.showLogs = BuildConfig.DEBUG
-
-        // We default to off in the manifest - we turn on here if the user approves
-        // leave off when running in the debugger
-        if (!isEmulator && (!BuildConfig.DEBUG || !Debug.isDebuggerConnected())) {
-            val crashlytics = FirebaseCrashlytics.getInstance()
-            crashlytics.setCrashlyticsCollectionEnabled(isAnalyticsAllowed)
-            crashlytics.setCustomKey("debug_build", BuildConfig.DEBUG)
-
-            val pref = AppPrefs(this)
-            crashlytics.setUserId(pref.getInstallId()) // be able to group all bugs per anonymous user
-
-            // We always send our log messages to the crashlytics lib, but they only get sent to the server if we report an exception
-            // This makes log messages work properly if someone turns on analytics just before they click report bug.
-            // send all log messages through crashyltics, so if we do crash we'll have those in the report
-            val standardLogger = Logging.printlog
-            Logging.printlog = { level, tag, message ->
-                crashlytics.log("$tag: $message")
-                standardLogger(level, tag, message)
-            }
-
-            fun sendCrashReports() {
-                if (isAnalyticsAllowed)
-                    crashlytics.sendUnsentReports()
-            }
-
-            // Send any old reports if user approves
-            sendCrashReports()
-
-            // Attach to our exception wrapper
-            Exceptions.reporter = { exception, _, _ ->
-                crashlytics.recordException(exception)
-                sendCrashReports() // Send the new report
-            }
+        initializeMaps(this)
+        // Initialize DatabaseManager asynchronously with current device address so DAO consumers have an active DB
+        val entryPoint = EntryPointAccessors.fromApplication(this, AppEntryPoint::class.java)
+        CoroutineScope(Dispatchers.Default).launch {
+            entryPoint.databaseManager().init(entryPoint.meshPrefs().deviceAddress)
         }
+    }
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AppEntryPoint {
+    fun databaseManager(): DatabaseManager
+
+    fun meshPrefs(): MeshPrefs
+}
+
+fun logAssert(executeReliableWrite: Boolean) {
+    if (!executeReliableWrite) {
+        val ex = AssertionError("Assertion failed")
+        Timber.e(ex)
+        throw ex
     }
 }

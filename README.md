@@ -1,7 +1,11 @@
-# Meshtastic-Android
+<p align="center">
+  <img src=".github/meshtastic_logo.png" alt="Meshtastic Logo" width="200"/>
+</p>
+<h1 align="center">Meshtastic-Android</h1>
 
 ![GitHub all releases](https://img.shields.io/github/downloads/meshtastic/meshtastic-android/total)
-[![Android CI](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/android.yml/badge.svg)](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/android.yml)
+[![Android CI](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/pull-request.yml/badge.svg?branch=main)](https://github.com/meshtastic/Meshtastic-Android/actions/workflows/pull-request.yml)
+[![codecov](https://codecov.io/gh/meshtastic/Meshtastic-Android/graph/badge.svg)](https://codecov.io/gh/meshtastic/Meshtastic-Android)
 [![Crowdin](https://badges.crowdin.net/e/f440f1a5e094a5858dd86deb1adfe83d/localized.svg)](https://crowdin.meshtastic.org/android)
 [![CLA assistant](https://cla-assistant.io/readme/badge/meshtastic/Meshtastic-Android)](https://cla-assistant.io/meshtastic/Meshtastic-Android)
 [![Fiscal Contributors](https://opencollective.com/meshtastic/tiers/badge.svg?label=Fiscal%20Contributors&color=deeppink)](https://opencollective.com/meshtastic/)
@@ -9,74 +13,72 @@
 
 This is a tool for using Android with open-source mesh radios. For more information see our webpage: [meshtastic.org](https://www.meshtastic.org). If you are looking for the the device side code, see [here](https://github.com/meshtastic/Meshtastic-device).
 
-This project is currently beta testing, if you have questions or feedback
-please [Join our discussion forum](https://meshtastic.discourse.group/). We would love to hear from
-you!
+This project is currently beta testing across various providers. If you have questions or feedback please [Join our discussion forum](https://github.com/orgs/meshtastic/discussions) or the [Discord Group](https://discord.gg/meshtastic) . We would love to hear from you!
+
+
+
+## Get Meshtastic
+
+The easiest, and fastest way to get the latest beta releases is to use our [github releases](https://github.com/meshtastic/Meshtastic-Android/releases). It is recommend to use these with [Obtainum](https://github.com/ImranR98/Obtainium) to get the latest updates.
+
+Alternatively, these other providers are also available, but may be slower to update. 
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
 alt="Get it on F-Droid"
-width="49%">](https://mesh.tastic.app/fdroid/repo)
+width="24%">](https://f-droid.org/packages/com.geeksville.mesh/)
+[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
+alt="Get it on IzzyOnDroid"
+width="24%">](https://apt.izzysoft.de/fdroid/index/apk/com.geeksville.mesh)
+[<img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png"
+alt="Get it on GitHub"
+width="24%">](https://github.com/meshtastic/Meshtastic-Android/releases)
 [<img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"
 alt="Download at https://play.google.com/store/apps/details?id=com.geeksville.mesh]"
-width="49%">](https://play.google.com/store/apps/details?id=com.geeksville.mesh&referrer=utm_source%3Dgithub-android-readme)
+width="24%">](https://play.google.com/store/apps/details?id=com.geeksville.mesh&referrer=utm_source%3Dgithub-android-readme)
 
-If you want to join the Play Store beta program go to [this URL](https://play.google.com/apps/testing/com.geeksville.mesh) and opt-in to the alpha/beta test.
-If you encounter any problems or have questions, [post in the forum](https://meshtastic.discourse.group/) and we'll help.
+The play store is the last to update of these options, but if you want to join the Play Store testing program go to [this URL](https://play.google.com/apps/testing/com.geeksville.mesh) and opt-in to become a tester.
+If you encounter any problems or have questions, [ask us on the discord](https://discord.gg/meshtastic), [create an issue](https://github.com/meshtastic/Meshtastic-Android/issues), or [post in the forum](https://github.com/orgs/meshtastic/discussions) and we'll help as we can.
 
-However, if you must use 'raw' APKs you can get them from our [github releases](https://github.com/meshtastic/Meshtastic-Android/releases). This is not recommended because if you manually install an APK it will not automatically update.
+## Documentation
 
-## Build instructions
+The project's documentation is generated with [Dokka](https://kotlinlang.org/docs/dokka-introduction.html) and hosted on GitHub Pages. It is automatically updated on every push to the `main` branch.
 
-If you would like to develop this application we'd love your help! These build instructions are brief and should be improved, please send a PR if you can.
+[**View Documentation**](https://meshtastic.github.io/Meshtastic-Android/)
 
-- Use Android Studio to build/debug
-- Use "git submodule update --init --recursive" to pull in the various submodules we depend on
-- There are a few config files which you'll need to copy from templates included in the project. Run
-  the following commands to do so:
+### Generating Locally
 
-```bash
-rm ./app/google-services.json
-cp ./app/google-services-example.json ./app/google-services.json
-rm ./app/src/main/res/values/curfirmwareversion.xml
-cp ./app/special/curfirmwareversion.xml ./app/src/main/res/values/
+You can generate the documentation locally to preview your changes.
+
+1.  **Run the Dokka task:**
+    ```bash
+    ./gradlew :app:dokkaHtml
+    ```
+2.  **View the output:**
+    The generated HTML files will be located in the `app/build/dokka/html` directory. You can open the `index.html` file in your browser to view the documentation.
+
+## Translations
+
+You can help translate the app into your native language using [Crowdin](https://crowdin.meshtastic.org/android).
+
+## Building the Android App
+> [!WARNING]
+> Debug and release builds can be installed concurrently. This is solely to enable smoother development, and you should avoid running both apps simultaneously. To ensure proper function, force quit the app not in use.
+
+https://meshtastic.org/docs/development/android/
+
+Note: when building the `google` flavor locally you will need to supply your own [Google Maps Android SDK api key](https://developers.google.com/maps/documentation/android-sdk/get-api-key) `MAPS_API_KEY` in `local.properties` in order to use Google Maps.
+e.g.
+```properties
+MAPS_API_KEY=your_google_maps_api_key_here
 ```
 
-- Now you should be able to select "Run / Run" in the IDE and it will happily start running on your
-  phone or the emulator. Note: The emulators don't support bluetooth, so some features can not be
-  used in that environment.
+## Contributing guidelines
 
-## Analytics setup
+For detailed instructions on how to contribute, please see our [CONTRIBUTING.md](CONTRIBUTING.md) file.
+For details on our release process, see the [RELEASE_PROCESS.md](RELEASE_PROCESS.md) file.
 
-- analytics are included but can be disabled by the user on the settings screen
+## Repository Statistics
 
-- on dev devices
+![Alt](https://repobeats.axiom.co/api/embed/1d75239069a6d671fe0b8f80b2e1bf590a98f0eb.svg "Repobeats analytics image")
 
-```bash
-adb shell setprop debug.firebase.analytics.app com.geeksville.mesh
-adb shell setprop log.tag.FirebaseCrashlytics DEBUG
-```
-
-for verbose logging:
-
-```bash
-adb shell setprop log.tag.FA VERBOSE
-```
-
-# Credits
-
-This project is the work of volunteers:
-
-- @artemisoftnian: Contributed Spanish translations.
-- @CycloMies: Contributed Swedish, Finnish and German translations.
-- @eriktheV-king: Contributed Dutch and French translations.
-- @Lgoix: Contributed tooltip for radio mode
-- @Eugene: Contributed Russian translation.
-- @Jinx17: Contributed Slovenian translation.
-- @Konradrundfunk: Contributed German fixes.
-- @Mango-sauce: Contributed Chinese translation.
-- @NEKLAN: Contributed Japanese translation.
-- @Ohcdh: Contributed Irish and Italian translations.
-- @Slavino: Contributed Slovak translation.
-- @Zone: Contributed Turkish translation.
-
-Copyright 2022, Geeksville Industries, LLC. GPL V3 license
+Copyright 2025, Meshtastic LLC. GPL-3.0 license

@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (c) 2025 Meshtastic LLC
+  ~
+  ~ This program is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by
+  ~ the Free Software Foundation, either version 3 of the License, or
+  ~ (at your option) any later version.
+  ~
+  ~ This program is distributed in the hope that it will be useful,
+  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~ GNU General Public License for more details.
+  ~
+  ~ You should have received a copy of the GNU General Public License
+  ~ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="GoogleAppIndexingWarning">
@@ -23,10 +40,12 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
 
+    <!-- API 33+ Notification runtime permissions -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Permissions required for providing location (from phone GPS) to mesh -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- This permission is required for analytics - and soon the MQTT gateway -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -44,26 +63,22 @@
 
     <!-- We run our mesh code as a foreground service - FIXME, find a way to stop doing this -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Needed to open our bluetooth connection to our paired device (after reboot) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- For android >=26 we can use the new BLE scanning API, which allows auto launching our service when our device is seen -->
-    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
-    <uses-permission android:name="android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND" />
-
-    <!-- Uart access -->
 
     <!-- zxing library for QR Code scanning using camera -->
     <uses-permission android:name="android.permission.CAMERA" />
 
     <uses-feature
-        android:name="android.hardware.bluetooth_le"
+        android:name="android.hardware.camera"
         android:required="false" />
 
-    <!-- For the modern BLE scanning API -->
     <uses-feature
-        android:name="android.software.companion_device_setup"
+        android:name="android.hardware.bluetooth_le"
         android:required="false" />
 
     <!-- for USB serial access -->
@@ -71,18 +86,27 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
 
+    <!-- Declare geo: intent visibility for Android 11+ (needed for resolveActivity with map apps) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+    </queries>
+
     <!-- hardware acceleration is required for zxing barcode lib -->
     <application
-        tools:replace="android:icon"
         android:name="com.geeksville.mesh.MeshUtilApplication"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher2"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher2_round"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
-        android:theme="@style/AppTheme"
-        android:localeConfig="@xml/locales_config">
+        android:theme="@style/SplashTheme"
+        android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- Default crash collection and analytics off until we (possibly) turn it on in application.onCreate -->
         <meta-data
@@ -92,18 +116,11 @@
             android:name="firebase_analytics_collection_enabled"
             android:value="false" />
 
-        <!-- we need bind job service for oreo -->
-        <service
-            android:name="com.geeksville.mesh.service.SoftwareUpdateService"
-            android:enabled="true"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
-
         <!-- This is the public API for doing mesh radio operations from android apps -->
         <service
             android:name="com.geeksville.mesh.service.MeshService"
             android:enabled="true"
-            android:foregroundServiceType="connectedDevice"
+            android:foregroundServiceType="connectedDevice|location"
             android:exported="true" tools:ignore="ExportedActivity">
             <intent-filter>
                 <action android:name="com.geeksville.mesh.Service" />
@@ -119,43 +136,54 @@
                 android:value="true" />
         </service>
 
-        <!-- zxing for QR Code scanning: lock portrait orientation -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="portrait"
+            android:screenOrientation="unspecified"
             tools:replace="screenOrientation" />
 
         <activity
             android:name="com.geeksville.mesh.MainActivity"
-            android:launchMode="singleInstance"
-            android:screenOrientation="portrait"
-            android:windowSoftInputMode="stateAlwaysHidden"
-            android:theme="@style/Theme.App.Starting"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="meshtastic" android:host="meshtastic" />
+            </intent-filter>
+
             <intent-filter android:autoVerify="true">
-                <!-- The QR codes to share channel settings are shared as meshtastic URLS
+                <!-- The QR codes to share channel settings and contacts are shared as meshtastic URLS
 
                 an approximate example:
-                http://meshtastic.org/e/YXNkZnF3ZXJhc2RmcXdlcmFzZGZxd2Vy
+                https://meshtastic.org/e/YXNkZnF3ZXJhc2RmcXdlcmFzZGZxd2Vy
+                https://meshtastic.org/v/#CNar9vwDEi0KCSEzZjgyOTVkNhIPV2F0ZXJmYWxsIDIg4piGGgPimaciBu2eP4KV1igJOAI
                 -->
                 <action android:name="android.intent.action.VIEW" />
 
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <data
-                    android:scheme="https"
-                    android:host="meshtastic.org"
-                    android:pathPrefix="/e/" />
-                <data
-                    android:scheme="https"
-                    android:host="meshtastic.org"
-                    android:pathPrefix="/E/" />
+                <data android:scheme="https" />
+                <data android:host="meshtastic.org" />
+                <data android:pathPrefix="/e/" />
+                <data android:pathPrefix="/E/" />
+                <data android:pathPrefix="/v/" />
+                <data android:pathPrefix="/V/" />
             </intent-filter>
 
             <intent-filter>
@@ -192,9 +220,18 @@
                     android:path="com.geeksville.mesh" /> -->
             </intent-filter>
         </receiver>
+        <receiver android:name="com.geeksville.mesh.service.ReplyReceiver"/>
 
+        <!-- allow for plugin discovery -->
         <activity
-            android:name=".AppIntroduction"/>
+            android:name="com.atakmap.app.component"
+            android:exported="true"
+            tools:ignore="MissingClass">
+            <intent-filter android:label="@string/app_name">
+                <action android:name="com.atakmap.app.component" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

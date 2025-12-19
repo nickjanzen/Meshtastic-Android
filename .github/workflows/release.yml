@@ -1,132 +1,256 @@
 name: Make Release
+
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      version:
-        description: "Release version (Example: 1.0.0, must match app/gradle.build 'versionName')"
+      base_version:
+        description: 'The base version for the release (e.g., 2.3.0)'
         required: true
-        default: '1.0.0'
+        type: string
+      tag_name:
+        description: 'The tag that triggered the release'
+        required: true
+        type: string
+      channel:
+        description: 'The channel to create a release for or promote to'
+        required: true
+        type: string
+    secrets:
+      GSERVICES:
+        required: true
+      KEYSTORE:
+        required: true
+      KEYSTORE_FILENAME:
+        required: true
+      KEYSTORE_PROPERTIES:
+        required: true
+      DATADOG_APPLICATION_ID:
+        required: true
+      DATADOG_CLIENT_TOKEN:
+        required: true
+      GOOGLE_MAPS_API_KEY:
+        required: true
+      GOOGLE_PLAY_JSON_KEY:
+        required: true
+      GRADLE_ENCRYPTION_KEY:
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+  id-token: write
+  attestations: write
 
 jobs:
-  release-build:
+  prepare-build-info:
     runs-on: ubuntu-latest
+    outputs:
+      APP_VERSION_NAME: ${{ steps.get_version_name.outputs.APP_VERSION_NAME }}
+      APP_VERSION_CODE: ${{ steps.calculate_version_code.outputs.versionCode }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'jetbrains'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          build-scan-publish: true
+          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
+          build-scan-terms-of-use-agree: 'yes'
 
-    - name: Checkout code
-      uses: actions/checkout@v3
-      with:
-        submodules: 'recursive'
+      - name: Determine Version Name from Tag
+        id: get_version_name
+        run: echo "APP_VERSION_NAME=$(echo ${{ inputs.tag_name }} | sed 's/-.*//' | sed 's/v//')" >> $GITHUB_OUTPUT
 
-    - name: Load secrets
-      run: |
-        rm ./app/google-services.json
-        echo $GSERVICES > ./app/google-services.json
-        echo $KEYSTORE | base64 -di > ./app/$KEYSTORE_FILENAME
-        echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
-      env:
+      - name: Extract VERSION_CODE_OFFSET from config.properties
+        id: get_version_code_offset
+        run: |
+          OFFSET=$(grep '^VERSION_CODE_OFFSET=' config.properties | cut -d'=' -f2)
+          echo "VERSION_CODE_OFFSET=$OFFSET" >> $GITHUB_OUTPUT
+
+      - name: Calculate Version Code from Git Commit Count
+        id: calculate_version_code
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          OFFSET=${{ steps.get_version_code_offset.outputs.VERSION_CODE_OFFSET }}
+          VERSION_CODE=$((COMMIT_COUNT + OFFSET))
+          echo "versionCode=$VERSION_CODE" >> $GITHUB_OUTPUT
+        shell: bash
+
+  release-google:
+    runs-on: ubuntu-latest
+    needs: prepare-build-info
+    environment: Release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'jetbrains'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          build-scan-publish: true
+          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
+          build-scan-terms-of-use-agree: 'yes'
+
+      - name: Load secrets
+        env:
           GSERVICES: ${{ secrets.GSERVICES }}
           KEYSTORE: ${{ secrets.KEYSTORE }}
           KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
           KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+          DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
+          DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: |
+          rm -f ./app/google-services.json
+          echo $GSERVICES > ./app/google-services.json
+          echo $KEYSTORE | base64 -di > ./app/$KEYSTORE_FILENAME
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
+          echo "datadogApplicationId=$DATADOG_APPLICATION_ID" >> ./secrets.properties
+          echo "datadogClientToken=$DATADOG_CLIENT_TOKEN" >> ./secrets.properties
+          echo "MAPS_API_KEY=$GOOGLE_MAPS_API_KEY" >> ./secrets.properties
+          echo "$GOOGLE_PLAY_JSON_KEY" > ./fastlane/play-store-credentials.json
 
-    - name: Set up JDK 11
-      uses: actions/setup-java@v3
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        # Note: we don't use caches on release builds because we don't want to accidentally not have a virgin build machine
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.8'
+          bundler-cache: true
 
-    - name: Find firmware release tag
-      id: firmware_version
-      uses: oprypin/find-latest-tag@v1
-      with:
-        repository: meshtastic/Meshtastic-device
-        releases-only: true
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Deploy Google Play to Internal Track with Fastlane
+        env:
+          VERSION_NAME: ${{ needs.prepare-build-info.outputs.APP_VERSION_NAME }}
+          VERSION_CODE: ${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }}
+        run: bundle exec fastlane internal
 
-    - name: Create version strings
-      run: |
-        echo "CUR_FIRMWARE_VERSION=$(echo ${{ steps.firmware_version.outputs.tag }}|sed -e 's/^v//')" >> $GITHUB_ENV
-        echo "SHORT_FIRMWARE_VERSION=$(echo ${{ steps.firmware_version.outputs.tag }}|sed -e 's/^v//' -e 's/.\{8\}$//')" >> $GITHUB_ENV
+      - name: Upload Google AAB artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: google-aab
+          path: app/build/outputs/bundle/googleRelease/app-google-release.aab
+          retention-days: 1
 
-    - name: Create curfirmwareversion.xml
-      run: |
-        rm ./app/src/main/res/values/curfirmwareversion.xml
-        echo -e "<resources>\n    <string name=\"cur_firmware_version\" translatable=\"false\">${{ env.CUR_FIRMWARE_VERSION }}</string>\n    <string name=\"short_firmware_version\" translatable=\"false\">${{ env.SHORT_FIRMWARE_VERSION }}</string>\n</resources>" > ./app/src/main/res/values/curfirmwareversion.xml
+      - name: Upload Google APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: google-apk
+          path: app/build/outputs/apk/google/release/app-google-release.apk
+          retention-days: 1
 
-#    - name: Fetch firmware release
-#      uses: dsaltares/fetch-gh-release-asset@master
-#      with:
-#        repo: meshtastic/Meshtastic-device
-#        file: firmware-${{ env.CUR_FIRMWARE_VERSION }}.zip
-#        version: tags/${{ steps.firmware_version.outputs.tag }}
-#        target: firmware.zip
-#        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest Google artifacts provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            app/build/outputs/bundle/googleRelease/app-google-release.aab
+            app/build/outputs/apk/google/release/app-google-release.apk
 
-#    - name: Unzip firmware into assets/firmware
-#      run: |
-#        rm -rf ./app/src/main/assets/firmware
-#        mkdir -p ./app/src/main/assets/firmware
-#        unzip -qq ./firmware.zip 'littlefs-*.bin' 'firmware-heltec*.bin' 'firmware-tbeam*.bin' 'firmware-tlora*.bin' 'firmware-nano*.bin' -d ./app/src/main/assets/firmware
-#        rm ./firmware.zip
+  release-fdroid:
+    runs-on: ubuntu-latest
+    needs: prepare-build-info
+    environment: Release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'jetbrains'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          build-scan-publish: true
+          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
+          build-scan-terms-of-use-agree: 'yes'
 
-    - name: Mock firmware assets for release
-      run: |
-        rm -rf ./app/src/main/assets/firmware
-        mkdir -p ./app/src/main/assets/firmware
+      - name: Load secrets
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+        run: |
+          echo $KEYSTORE | base64 -di > ./app/$KEYSTORE_FILENAME
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
 
-    - name: Validate Gradle wrapper
-      uses: gradle/wrapper-validation-action@v1
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.8'
+          bundler-cache: true
 
-    - name: Gradle bundleRelease
-      run: ./gradlew bundleRelease
+      - name: Build F-Droid with Fastlane
+        env:
+          VERSION_NAME: ${{ needs.prepare-build-info.outputs.APP_VERSION_NAME }}
+          VERSION_CODE: ${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }}
+        run: bundle exec fastlane fdroid_build
 
-    - name: Gradle assembleRelease
-      run: ./gradlew assembleRelease
+      - name: Upload F-Droid APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: fdroid-apk
+          path: app/build/outputs/apk/fdroid/release/app-fdroid-release.apk
+          retention-days: 1
 
-#    - name: Upload Release to Play Store
-#      run: cp ./app/src/main/play/release-notes/en-US/production.txt ./app/src/main/play/release-notes/whatsnew-en-US.txt
-#    - uses: r0adkll/upload-google-play@v1
-#      with:
-#        serviceAccountJsonPlainText: ${{ secrets.GSERVICES }}
-#        packageName: com.geeksville.mesh
-#        releaseFiles: app/build/outputs/bundle/release/app-release.aab
-#        track: internal
-#        whatsNewDirectory: app/src/main/play/release-notes
-#        mappingFile: app/build/outputs/mapping/release/mapping.txt
+      - name: Attest F-Droid APK provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: app/build/outputs/apk/fdroid/release/app-fdroid-release.apk
 
-    - name: Create GitHub release
-      uses: actions/create-release@v1
-      id: create_release
-      with:
-        draft: true
-        prerelease: true
-        release_name: Meshtastic Android ${{ github.event.inputs.version}} alpha
-        tag_name: ${{ github.event.inputs.version}}
-        body: |
-          Autogenerated by github action, developer should edit as required before publishing...
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [prepare-build-info, release-google, release-fdroid]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: ./artifacts
 
-    - name: Add AAB to release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: app/build/outputs/bundle/release/app-release.aab
-        asset_name: app-release-${{ github.event.inputs.version}}.aab
-        asset_content_type: application/zip
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.tag_name }} (${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }})
+          generate_release_notes: true
+          files: ./artifacts/*/*
+          draft: true
+          prerelease: true
 
-    - name: Add APK to release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: app/build/outputs/apk/release/app-release.apk
-        asset_name: app-release-${{ github.event.inputs.version}}.apk
-        asset_content_type: application/zip
-
-#    - name: Gradle publishBundle
-#      run: ./gradlew publishBundle
+      - name: Create or Update internal GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ secrets.INTERNAL_BUILDS_HOST }}
+          token: ${{ secrets.INTERNAL_BUILDS_HOST_PAT }}
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.tag_name }} (${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }})
+          generate_release_notes: true
+          files: ./artifacts/*/*
+          draft: false
+          prerelease: true

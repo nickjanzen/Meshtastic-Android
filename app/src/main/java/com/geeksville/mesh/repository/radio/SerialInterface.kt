@@ -1,67 +1,39 @@
+/*
+ * Copyright (c) 2025 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 package com.geeksville.mesh.repository.radio
 
-import android.content.Context
-import com.geeksville.mesh.android.Logging
-import com.geeksville.mesh.android.usbManager
 import com.geeksville.mesh.repository.usb.SerialConnection
 import com.geeksville.mesh.repository.usb.SerialConnectionListener
 import com.geeksville.mesh.repository.usb.UsbRepository
-import com.hoho.android.usbserial.driver.UsbSerialDriver
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import timber.log.Timber
 import java.util.concurrent.atomic.AtomicReference
 
-/**
- * An interface that assumes we are talking to a meshtastic device via USB serial
- */
-class SerialInterface(
+/** An interface that assumes we are talking to a meshtastic device via USB serial */
+class SerialInterface
+@AssistedInject
+constructor(
     service: RadioInterfaceService,
+    private val serialInterfaceSpec: SerialInterfaceSpec,
     private val usbRepository: UsbRepository,
-    private val address: String) :
-    StreamInterface(service), Logging {
-    companion object : Logging, InterfaceFactory('s') {
-        override fun createInterface(
-            context: Context,
-            service: RadioInterfaceService,
-            usbRepository: UsbRepository,
-            rest: String
-        ): IRadioInterface = SerialInterface(service, usbRepository, rest)
-
-        init {
-            registerFactory()
-        }
-
-        /**
-         * according to https://stackoverflow.com/questions/12388914/usb-device-access-pop-up-suppression/15151075#15151075
-         * we should never ask for USB permissions ourselves, instead we should rely on the external dialog printed by the system.  If
-         * we do that the system will remember we have accesss
-         */
-        const val assumePermission = false
-
-        fun toInterfaceName(deviceName: String) = "s$deviceName"
-
-        override fun addressValid(
-            context: Context,
-            usbRepository: UsbRepository,
-            rest: String
-        ): Boolean {
-            usbRepository.serialDevicesWithDrivers.value.filterValues {
-                assumePermission || context.usbManager.hasPermission(it.device)
-            }
-            findSerial(usbRepository, rest)?.let { d ->
-                return assumePermission || context.usbManager.hasPermission(d.device)
-            }
-            return false
-        }
-
-        private fun findSerial(usbRepository: UsbRepository, rest: String): UsbSerialDriver? {
-            val deviceMap = usbRepository.serialDevicesWithDrivers.value
-            return if (deviceMap.containsKey(rest)) {
-                deviceMap[rest]!!
-            } else {
-                deviceMap.map { (_, driver) -> driver }.firstOrNull()
-            }
-        }
-    }
-
+    @Assisted private val address: String,
+) : StreamInterface(service) {
     private var connRef = AtomicReference<SerialConnection?>()
 
     init {
@@ -74,41 +46,80 @@ class SerialInterface(
     }
 
     override fun connect() {
-        val device = findSerial(usbRepository, address)
+        val device = serialInterfaceSpec.findSerial(address)
         if (device == null) {
-            errormsg("Can't find device")
+            Timber.e("[$address] Serial device not found at address")
         } else {
-            info("Opening $device")
-            val onConnect: () -> Unit = {  super.connect() }
-            usbRepository.createSerialConnection(device, object : SerialConnectionListener {
-                override fun onMissingPermission() {
-                    errormsg("Need permissions for port")
-                }
+            val connectStart = System.currentTimeMillis()
+            Timber.i("[$address] Opening serial device: $device")
 
-                override fun onConnected() {
-                    onConnect.invoke()
-                }
+            var packetsReceived = 0
+            var bytesReceived = 0L
+            var connectionStartTime = 0L
 
-                override fun onDataReceived(bytes: ByteArray) {
-                    debug("Received ${bytes.size} byte(s)")
-                    bytes.forEach(::readChar)
-                }
-
-                override fun onDisconnected(thrown: Exception?) {
-                    thrown?.let { e ->
-                        errormsg("Serial error: $e")
-                    }
-                    debug("$device disconnected")
-                    onDeviceDisconnect(false)
-                }
-            }).also { conn ->
-                connRef.set(conn)
-                conn.connect()
+            val onConnect: () -> Unit = {
+                connectionStartTime = System.currentTimeMillis()
+                val connectionTime = connectionStartTime - connectStart
+                Timber.i("[$address] Serial device connected in ${connectionTime}ms")
+                super.connect()
             }
+
+            usbRepository
+                .createSerialConnection(
+                    device,
+                    object : SerialConnectionListener {
+                        override fun onMissingPermission() {
+                            Timber.e(
+                                "[$address] Serial connection failed - missing USB permissions for device: $device",
+                            )
+                        }
+
+                        override fun onConnected() {
+                            onConnect.invoke()
+                        }
+
+                        override fun onDataReceived(bytes: ByteArray) {
+                            packetsReceived++
+                            bytesReceived += bytes.size
+                            Timber.d(
+                                "[$address] Serial received packet #$packetsReceived - " +
+                                    "${bytes.size} byte(s) (Total RX: $bytesReceived bytes)",
+                            )
+                            bytes.forEach(::readChar)
+                        }
+
+                        override fun onDisconnected(thrown: Exception?) {
+                            val uptime =
+                                if (connectionStartTime > 0) {
+                                    System.currentTimeMillis() - connectionStartTime
+                                } else {
+                                    0
+                                }
+                            thrown?.let { e -> Timber.e(e, "[$address] Serial error after ${uptime}ms: ${e.message}") }
+                            Timber.w(
+                                "[$address] Serial device disconnected - " +
+                                    "Device: $device, " +
+                                    "Uptime: ${uptime}ms, " +
+                                    "Packets RX: $packetsReceived ($bytesReceived bytes)",
+                            )
+                            onDeviceDisconnect(false)
+                        }
+                    },
+                )
+                .also { conn ->
+                    connRef.set(conn)
+                    conn.connect()
+                }
         }
     }
 
     override fun sendBytes(p: ByteArray) {
-        connRef.get()?.sendBytes(p)
+        val conn = connRef.get()
+        if (conn != null) {
+            Timber.d("[$address] Serial sending ${p.size} bytes")
+            conn.sendBytes(p)
+        } else {
+            Timber.w("[$address] Serial connection not available, cannot send ${p.size} bytes")
+        }
     }
 }
